@@ -1,0 +1,155 @@
+﻿Program.Sub.Preflight.Start
+v.Global.sSO.Declare(String)
+Program.Sub.Preflight.End
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'hook#11872
+'this script set the hold status of SO when saved
+'if it is on hold => end
+'if new SO => hold 
+'if Amount change => hold
+
+'when user clicks on Lines, data for current SO will be captured in a custom table GCG_6673_CRR_SO
+'if not click on Lines => no change => end
+
+Program.Sub.Main.Start
+
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sCust.Declare(String)
+	v.Local.sSO.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.fCurrentTotal.Declare(Float)
+	v.Local.fOldTotal.Declare(Float)
+	
+	'get SO and check if it is on hold
+	'if there is no record, insert it
+	'if so, exit
+	'------------------------------------------------------------
+	v.Local.sSO.Set(v.Passed.000003)
+	f.Intrinsic.Control.If(v.Local.sSO.Trim,=,"")
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+	f.Intrinsic.String.LPad(v.Local.sSO,"0",7,v.Local.sSO)
+	v.Global.sSO.Set(v.Local.sSO)
+	f.Intrinsic.String.Build("select SHP_HLD_FLAG from GCG_6673_SO_HOLD where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.ODBC.Connection!Con.Close
+	
+	f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True)
+		f.Intrinsic.String.Build("insert into GCG_6673_SO_HOLD (ORDER_NO,SHP_HLD_FLAG) values('{0}','2')", v.Local.sSO, v.Local.sSQL)
+			f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+		'Feb 2023 - also update ORDER_HEADER
+		f.Intrinsic.String.Build("update ORDER_HEADER set SHP_HLD_FLAG='2' where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		f.ODBC.Connection!Con.Close
+		
+		v.Passed.000096.Set("Y")
+		
+		f.Intrinsic.Control.End
+		
+	f.Intrinsic.Control.Else
+		f.Intrinsic.Control.If(v.Local.sRet,=,"2", "or", v.Local.sRet,=,"4")
+			f.Intrinsic.Control.End
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+	'------------------------------------------------------------
+
+	
+	'case when SO is not on hold
+	'when user clicks on Lines, data for current SO will be captured in a custom table GCG_6673_CRR_SO
+	'if not click on Lines => no change => end
+	
+	'get current SO's amount to compare with the captured SO before edit
+	'if different => hold
+	'------------------------------------------------------------
+	f.Intrinsic.String.Build("select TOTAL_AMT from GCG_6673_CRR_SO where RTRIM(ORDER_NO)='{0}' and RTRIM(GSSUSER)='{1}'", v.Local.sSO, v.Caller.User, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		v.Local.sRet.Set("")
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.ODBC.Connection!Con.Close
+	f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True)
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.Else
+		v.Local.fOldTotal.Set(v.Local.sRet)
+	f.Intrinsic.Control.EndIf
+	
+	'Find current Total
+	f.Intrinsic.String.Build("select SUM(QTY_ORDERED*PRICE) from V_ORDER_LINES where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.ODBC.Connection!Con.Close
+		
+		'if no line item/new SO
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True)
+			'hold this SO
+			f.Intrinsic.Control.CallSub(HoldThisSO)
+		f.Intrinsic.Control.Else
+		
+			'if always hold => hold
+			'-------------------------
+'			f.Intrinsic.String.Build("select RTRIM(HOLD_TYPE) from GCG_6673_CUSTHOLD where RTRIM(CUSTOMER)='{0}'", v.Local.sCust, v.Local.sSQL)
+'			f.ODBC.Connection!Con.OpenCompanyConnection
+'				f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+'			f.ODBC.Connection!Con.Close
+'			f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True, "or", v.Local.sRet,!=,"Limit Hold")
+'				f.Intrinsic.Control.CallSub(HoldThisSO)
+'				f.Intrinsic.Control.End
+'			f.Intrinsic.Control.EndIf
+'			'-------------------------
+			
+			'hold if amount increases
+			v.Local.fCurrentTotal.Set(v.Local.sRet)
+			f.Intrinsic.Control.If(v.Local.fCurrentTotal,!=,v.Local.fOldTotal)
+				'hold this SO
+				f.Intrinsic.Control.CallSub(HoldThisSO)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+	'------------------------------------------------------------
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+'hold the current SO
+'set Hold flag to 2
+program.Sub.HoldThisSO.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	
+	v.Passed.000096.Set("Y")
+	
+	f.Intrinsic.String.Build("update GCG_6673_SO_HOLD set SHP_HLD_FLAG='2' where RTRIM(ORDER_NO)='{0}'", v.Global.sSO, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+		'Feb 2023 - also update ORDER_HEADER
+	f.Intrinsic.String.Build("update ORDER_HEADER set SHP_HLD_FLAG='2' where RTRIM(ORDER_NO)='{0}'", v.Global.sSO, v.Local.sSQL)
+	f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	
+	
+		
+	f.ODBC.Connection!Con.Close
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+program.Sub.HoldThisSO.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$nle$}$20230418150947774$}$kjzCRYkA6UEoRnCwndYnRXWLVBFthCf2/ESWL1gCvTdjjVblOlmEdqJ5BgytgBHJ
+Program.Sub.Comments.End
