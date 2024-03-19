@@ -1,0 +1,39 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+'hook 12600
+'SO Line Exit
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sSO.Declare(String)
+	v.Local.sRet.Declare(String)
+	f.Intrinsic.Control.If(v.Caller.Hook,=,"12600")
+
+	f.Intrinsic.UI.Sleep(2)
+	
+		v.Local.sSO.Set(v.Passed.000005)
+		f.Intrinsic.String.LPad(v.Local.sSO,"0",7,v.Local.sSO)
+		f.Intrinsic.String.Build("select SHP_HLD_FLAG from GCG_6673_SO_HOLD where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+		f.ODBC.Connection!Con.OpenCompanyConnection
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,False)
+			f.Intrinsic.Control.If(v.Local.sRet,=,"2", "or", v.Local.sRet,=,"4")
+				f.Intrinsic.String.Build("update ORDER_HEADER set SHP_HLD_FLAG='2' where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+				f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+		f.ODBC.Connection!Con.Close
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription, "GCG 6673")
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20230418155143986$}$kjzCRYkA6UEoRnCwndYnRXWLVBFthCf2/ESWL1gCvTezGjRE4+3p55WEvI7ODMqg
+Program.Sub.Comments.End
