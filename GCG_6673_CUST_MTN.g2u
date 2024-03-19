@@ -1,0 +1,235 @@
+﻿Program.Sub.ScreenSU.Start
+Gui.Form..Create(BaseForm)
+Gui.Form..Caption("CUSTOMER HOLD-TYPE MAINTENANCE")
+Gui.Form..Size(507,720)
+Gui.Form..MinX(0)
+Gui.Form..MinY(0)
+Gui.Form..Position(0,0)
+Gui.Form..AlwaysOnTop(False)
+Gui.Form..FontName("Tahoma")
+Gui.Form..FontSize(8.25)
+Gui.Form..ControlBox(True)
+Gui.Form..MaxButton(True)
+Gui.Form..MinButton(True)
+Gui.Form..MousePointer(0)
+Gui.Form..Moveable(True)
+Gui.Form..Sizeable(True)
+Gui.Form..ShowInTaskBar(True)
+Gui.Form..TitleBar(True)
+Gui.Form..Event(UnLoad,Unload)
+Gui.Form.GsgcCust.Create(GsGridControl)
+Gui.Form.GsgcCust.Enabled(True)
+Gui.Form.GsgcCust.Visible(True)
+Gui.Form.GsgcCust.Zorder(0)
+Gui.Form.GsgcCust.Size(498,634)
+Gui.Form.GsgcCust.Position(4,52)
+Gui.Form.GsgcCust.Anchor(15)
+Gui.Form.GsgcCust.Event(CellValueChanged,GsgcCust_CellValueChanged)
+Gui.Form.cmdAdd.Create(Button)
+Gui.Form.cmdAdd.Enabled(False)
+Gui.Form.cmdAdd.Visible(False)
+Gui.Form.cmdAdd.Zorder(0)
+Gui.Form.cmdAdd.Size(130,23)
+Gui.Form.cmdAdd.Position(107,18)
+Gui.Form.cmdAdd.Caption("ADD A NEW CUSTOMER")
+Gui.Form.cmdAdd.FontName("Tahoma")
+Gui.Form.cmdAdd.FontSize(8.25)
+Gui.Form.cmdAdd.Event(Click,cmdAdd_Click)
+Gui.Form.cmdRefresh.Create(Button)
+Gui.Form.cmdRefresh.Enabled(True)
+Gui.Form.cmdRefresh.Visible(True)
+Gui.Form.cmdRefresh.Zorder(0)
+Gui.Form.cmdRefresh.Size(55,23)
+Gui.Form.cmdRefresh.Position(11,19)
+Gui.Form.cmdRefresh.Caption("REFRESH")
+Gui.Form.cmdRefresh.FontName("Tahoma")
+Gui.Form.cmdRefresh.FontSize(8.25)
+Gui.Form.cmdRefresh.Event(Click,Refresh)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'This script maintain the list of customers and their hold type
+'There are only 2 types: Limit Hold, and Always Hold
+
+
+'2023
+'also hook to AR > Customer Master > Script 1 14380
+'populate hook 14350
+
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+
+	Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+	
+	'Getdata
+	f.Intrinsic.Control.CallSub(GetData)
+	'Format Grid
+	f.Intrinsic.Control.CallSub(FormatGrid)
+	
+	'Display
+	gui.Form..Show
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+'refresh form
+Program.Sub.Refresh.Start
+f.Intrinsic.Control.Try
+	gui.Form.GsgcCust.Visible(False)
+	
+	'Getdata
+	f.Intrinsic.Control.CallSub(GetData)
+	'Format Grid
+	f.Intrinsic.Control.CallSub(FormatGrid)
+	
+	gui.Form.GsgcCust.Visible(True)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.Refresh.End
+
+'Get Data
+Program.Sub.GetData.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sSQL.Set("select RTRIM(C.CUSTOMER) CUSTOMER, RTRIM(M.NAME_CUSTOMER) CUST_NAME, RTRIM(C.HOLD_TYPE) HOLD_TYPE from GCG_6673_CUSTHOLD C left join V_CUSTOMER_MASTER M on RTRIM(C.CUSTOMER) = RTRIM(M.CUSTOMER) order by C.CUSTOMER")
+	
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.Intrinsic.Control.If(v.DataTable.dtCust.Exists)
+			f.Data.Datatable.Close("dtCust")
+		f.Intrinsic.Control.EndIf
+		f.Data.Datatable.CreateFromSQL("dtCust", "Con", v.Local.sSQL, True)
+	f.ODBC.Connection!Con.Close
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.GetData.End
+
+'Format
+Program.Sub.FormatGrid.Start
+f.Intrinsic.Control.Try
+	gui.Form.GsgcCust.AddGridviewFromDatatable("gvCust", "dtCust")
+	gui.Form.GsgcCust.SetGridviewProperty("gvCust", v.Enum.GridViewPropertyNames!EnableAppearanceEvenRow, True)
+	gui.Form.GsgcCust.SetGridviewProperty("gvCust", v.Enum.GridViewPropertyNames!Editable, True)
+	gui.Form.GsgcCust.SetGridviewProperty("gvCust", v.Enum.GridViewPropertyNames!ReadOnly, False)
+	gui.Form.GsgcCust.SetGridviewProperty("gvCust", "OptionsViewShowAutoFilterRow", true)
+	
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUSTOMER", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER")
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUST_NAME", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER NAME")
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "HOLD_TYPE", v.Enum.ColumnPropertyNames!Caption, "HOLD TYPE")
+	
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUSTOMER", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUST_NAME", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "HOLD_TYPE", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUSTOMER", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUST_NAME", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "HOLD_TYPE", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUSTOMER", v.Enum.ColumnPropertyNames!MinWidth, 60)
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUST_NAME", v.Enum.ColumnPropertyNames!MinWidth, 200)
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "HOLD_TYPE", v.Enum.ColumnPropertyNames!MinWidth, 60)
+	
+	
+	gui.Form.GsgcCust.ColumnEdit("gvCust", "HOLD_TYPE", "DropdownList", "Limit Hold*!*Always Hold")
+	
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUSTOMER", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "CUST_NAME", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcCust.SetColumnProperty("gvCust", "HOLD_TYPE", v.Enum.ColumnPropertyNames!AllowEdit, True)
+	
+	gui.Form.GsgcCust.MainView("gvCust")
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.FormatGrid.End
+
+'Catch
+Program.Sub.Catching.Start
+f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+Program.Sub.Catching.End
+
+'Unload
+Program.Sub.Unload.Start
+f.Intrinsic.Control.End
+Program.Sub.Unload.End
+
+'Add a Customer
+Program.Sub.cmdAdd_Click.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.sCust.Declare(String)
+	
+	f.ODBC.Connection!Con.OpenCompanyConnection
+	f.Intrinsic.UI.SetBRowserHotTypeAhead(True)
+	f.Intrinsic.UI.Browser("205","", v.Local.sRet)
+	
+	f.Intrinsic.Control.If(v.Local.sRet,!=, "***CANCEL***")
+		f.Intrinsic.String.Split(v.Local.sRet,"*!*", v.Local.sRet)
+		v.Local.sCust.Set(v.Local.sRet(0))
+		f.Intrinsic.String.Build("select * from GCG_6673_CUSTHOLD where RTRIM(CUSTOMER)='{0}'", v.Local.sCust.Trim, v.Local.sSQL)
+		v.Local.sRet.Set("")
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True)
+			f.Intrinsic.String.Build("insert into GCG_6673_CUSTHOLD (CUSTOMER, HOLD_TYPE) values('{0}','Always Hold')", v.Local.sCust.Trim, v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.Else
+			f.Intrinsic.UI.Msgbox("This Customer is already exist in the Maintenance Table")
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+	
+	f.ODBC.Connection!Con.Close
+	
+	f.Intrinsic.Control.CallSub(Refresh)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.cmdAdd_Click.End
+
+'Cell Value Changed
+Program.Sub.GsgcCust_CellValueChanged.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sCust.Declare(String)
+	v.Local.sType.Declare(String)
+	
+	gui.Form.GsgcCust.GetCellValueByColumnName("gvCust", "CUSTOMER", v.Args.RowIndex, v.Local.sCust)
+	gui.Form.GsgcCust.GetCellValueByColumnName("gvCust", "HOLD_TYPE", v.Args.RowIndex, v.Local.sType)
+	
+	f.Intrinsic.String.Build("update GCG_6673_CUSTHOLD set HOLD_TYPE='{1}' where RTRIM(CUSTOMER)='{0}'", v.Local.sCust, v.Local.sType, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+	f.ODBC.Connection!Con.Close
+	
+	f.Intrinsic.UI.Msgbox("Saved!")
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+	f.ODBC.Connection!Con.Close
+f.Intrinsic.Control.EndTry
+Program.Sub.GsgcCust_CellValueChanged.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20230129140023737$}$kjzCRYkA6UEoRnCwndYnRZ/cZPRzu9GcdMYVJVDzn3j1Mw3tNgImXDLnSleE/C3J
+Program.Sub.Comments.End
