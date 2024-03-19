@@ -1,0 +1,37 @@
+﻿Program.Sub.Preflight.Start
+Program.External.Include.Library("900100.lib")
+Program.Sub.Preflight.End
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'print the WO after scheduled
+Program.Sub.Main.Start
+Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+f.Intrinsic.Control.Try
+	v.Local.sParam.Declare(String)
+'	f.Intrinsic.Control.If(v.Caller.Hook,=,"16790")
+	f.Intrinsic.Control.If(v.Caller.Hook,=,"16800")
+	'	f.Intrinsic.String.Build("{0}-{1}", v.Passed.009000, v.Passed.009001, v.Local.sID)
+	'	f.Data.DataTable.AddRow("900100", "WO_Num", v.Passed.009000, "WO_Suf", v.Passed.009001, "WO_RPTID", "1811")
+	'	f.Intrinsic.Control.CallSub("900100Async")
+	
+		F.Intrinsic.String.ConcatCallWrapperArgs(v.Passed.009000,v.Passed.009001,"1811",V.Local.sParam)
+		F.Global.General.CallWrapperSync(900100,V.Local.sParam)
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20230221100832729$}$kjzCRYkA6UEoRnCwndYnRSjyVXnS1VGFx9v8yxuOAdYlXi7/wmHcdK9cVp7fQ6Fp
+Program.Sub.Comments.End
