@@ -1,0 +1,545 @@
+﻿Program.Sub.ScreenSU.Start
+Gui.Form..Create(BaseForm)
+Gui.Form..Caption("ORDERS ON SHIP HOLD")
+Gui.Form..Size(1024,720)
+Gui.Form..MinX(0)
+Gui.Form..MinY(0)
+Gui.Form..Position(0,0)
+Gui.Form..AlwaysOnTop(False)
+Gui.Form..FontName("Tahoma")
+Gui.Form..FontSize(8.25)
+Gui.Form..ControlBox(True)
+Gui.Form..MaxButton(True)
+Gui.Form..MinButton(True)
+Gui.Form..MousePointer(0)
+Gui.Form..Moveable(True)
+Gui.Form..Sizeable(True)
+Gui.Form..ShowInTaskBar(True)
+Gui.Form..TitleBar(True)
+Gui.Form..Event(UnLoad,Unload)
+Gui.Form.GsgcSO.Create(GsGridControl)
+Gui.Form.GsgcSO.Enabled(True)
+Gui.Form.GsgcSO.Visible(True)
+Gui.Form.GsgcSO.Zorder(0)
+Gui.Form.GsgcSO.Size(1016,683)
+Gui.Form.GsgcSO.Position(4,5)
+Gui.Form.GsgcSO.Anchor(15)
+Gui.Form.GsgcSO.Event(CellValueChanged,GsgcSO_CellValueChanged)
+Gui.Form.GsgcSO.Event(RowCellClick,GsgcSO_RowCellClick)
+Program.Sub.ScreenSU.End
+
+Program.Sub.Preflight.Start
+v.Global.lCurrentRow.Declare(Long)
+v.Global.sCurrentCust.Declare(String)
+v.Global.sCurrentCustChild.Declare(String)
+Program.Sub.Preflight.End
+
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'This script display the Dashboard 6673
+
+'3/20
+'	- allow blanket orders to be selected when check on SELECT ALL
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+
+	Function.Intrinsic.UI.UsePixels ' Allows you to use Pixels instead of Twips throughout
+	
+	f.Intrinsic.UI.InvokeWaitDialog("Loading data...")
+	
+	'Getdata
+	f.Intrinsic.Control.CallSub(GetParentData)
+	f.Intrinsic.Control.CallSub(GetChildData)
+	f.Intrinsic.Control.CallSub(AddDataRelation)
+	'Format Grid
+	f.Intrinsic.Control.CallSub(FormatParentGrid)
+	f.Intrinsic.Control.CallSub(FormatGrid)
+	
+	f.Intrinsic.Control.CallSub(AddContextMenu)
+	
+	f.Intrinsic.UI.CloseWaitDialog
+	
+	'Display
+	gui.Form..Show
+
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+'Catch
+Program.Sub.Catching.Start
+f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+Program.Sub.Catching.End
+
+Program.Sub.AddContextMenu.Start
+f.Intrinsic.Control.Try
+	'Add context Menu
+	'------------------------------------------------------------
+	gui.Form..ContextMenuCreate("cmOptions")
+	
+	gui.Form..ContextMenuAddItem("cmOptions", "cmiRefresh", v.Enum.MenuItemType!Button, "Refresh")
+	gui.Form..ContextMenuSetItemEventHandler("cmOptions", "cmiRefresh", "Refresh")
+	
+'	gui.Form..ContextMenuAddItem("cmOptions", "cmiSelectAll", v.Enum.MenuItemType!Button,"Select All By Customer")
+'	gui.Form..ContextMenuSetItemEventHandler("cmOptions","cmiSelectAll","SelectAllByCustomer")
+	
+	gui.Form..ContextMenuAddItem("cmOptions", "cmiReleaseSelected", v.Enum.MenuItemType!Button, "Release Selected")
+	gui.Form..ContextMenuSetItemEventHandler("cmOptions", "cmiReleaseSelected", "ReleaseSelected")
+	
+	gui.Form..ContextMenuShow("cmOptions", 1,1)
+	
+	gui.Form.GsgcSO.ContextMenuAttach("cmOptions")
+	'------------------------------------------------------------
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.AddContextMenu.End
+
+'Release Selected
+Program.Sub.ReleaseSelected.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sIndex.Declare(String)
+	v.Local.sFilter.Declare(String)
+	v.Local.sSOList.Declare(String)
+	v.Local.iCounter.Declare(Long)
+	
+	v.Local.sEmail.Declare(String)
+	v.Local.sGSUSer.Declare(String)
+	v.Local.iUser.Declare(Long)
+	v.Local.sSubject.Declare(String)
+	v.Local.sBody.Declare(String)
+	v.Local.sUserName.Declare(String)
+	
+	F.Global.Security.GetUserID(v.Caller.User,v.Caller.CompanyCode,v.Local.iUser)
+	
+	f.Data.Datatable.Select("dtCustomer$dtSO", "SELECT=True", v.Local.sIndex)
+	f.Intrinsic.Control.If(v.Local.sIndex, !=, "***NORETURN***")
+		f.Intrinsic.String.Split(v.Local.sIndex, "*!*", v.Local.sIndex)
+		f.Intrinsic.Control.For(v.Local.iCounter, 0, v.Local.sIndex.UBound, 1)
+			f.Intrinsic.Control.If(v.Local.iCounter,=,0)
+				f.Intrinsic.String.Build(" RTRIM(ORDER_NO) in ('{0}'", v.DataTable.dtCustomer$dtSO(v.Local.sIndex(v.Local.iCounter)).SO_NO!FieldValTrim, v.Local.sSOList)
+			f.Intrinsic.Control.Else
+				f.Intrinsic.String.Build("{0},'{1}'", v.Local.sSOList, v.DataTable.dtCustomer$dtSO(v.Local.sIndex(v.Local.iCounter)).SO_NO!FieldValTrim, v.Local.sSOList)
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.Next(v.Local.iCounter)
+		
+		f.Intrinsic.String.Build("{0})", v.Local.sSOList, v.Local.sSOList)
+		
+'		f.Intrinsic.String.Build("update ORDER_HEADER set SHP_HLD_FLAG = '1' where RECORD_TYPE='A' and {0}", v.Local.sSOList, v.Local.sSQL)
+		f.Intrinsic.String.Build("update GCG_6673_SO_HOLD set SHP_HLD_FLAG = '1' where 1=1 and {0}", v.Local.sSOList, v.Local.sSQL)
+		
+		f.ODBC.Connection!Con.OpenCompanyConnection
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+			
+			'feb 2023 - also release in ORDER_HEADER
+			f.Intrinsic.String.Build("update ORDER_HEADER set SHP_HLD_FLAG = '1' where 1=1 and {0}", v.Local.sSOList, v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+		'send email
+		'when GS User is entered in Order Sort 1
+		'and when email address for the user is found
+		f.Intrinsic.Control.For(v.Local.iCounter, 0, v.Local.sIndex.UBound, 1)
+			f.Intrinsic.String.Build("select RTRIM(CODE_SORT) from V_ORDER_HEADER where RTRIM(ORDER_NO)='{0}'", v.DataTable.dtCustomer$dtSO(v.Local.sIndex(v.Local.iCounter)).SO_NO!FieldValTrim, v.Local.sSQL)
+			v.Local.sGSUSer.Set("")
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sGSUSer)
+			
+			'get user and email, if not found, send to order@teamdls.com
+			f.Intrinsic.Control.If(v.Local.sGSUSer,!=,"")
+				v.Local.sEmail.Set("")
+				f.Global.Security.GetUserEmail(v.Local.sGSUSer, v.Caller.CompanyCode, v.Local.sEmail)	
+				f.Global.Security.GetFullName(v.Local.sGSUSer, v.Caller.CompanyCode, v.Local.sUserName)
+			f.Intrinsic.Control.EndIf
+			
+			f.Intrinsic.Control.If(v.Local.sEmail.Trim,=,"")
+				v.Local.sEmail.Set("order@teamdls.com")
+			f.Intrinsic.Control.EndIf
+				
+			'build message and send
+			v.Local.sSubject.Set("GSS: System Notification")
+			f.Intrinsic.String.Build("{1}{0}{2}{0}{3}{0}{0} This sales order has been released off hold", v.Ambient.NewLine, v.Caller.User, v.Local.sUserName, v.DataTable.dtCustomer$dtSO(v.Local.sIndex(v.Local.iCounter)).SO_NO!FieldValTrim, v.Local.sBody)
+'			f.Intrinsic.String.Build("The Order#{0} Has Been Released from Ship Hold", v.DataTable.dtCustomer$dtSO(v.Local.sIndex(v.Local.iCounter)).SO_NO!FieldValTrim, v.Local.sBody)
+			f.Global.Messaging.QueueMessage(v.Caller.CompanyCode, v.Local.iUser, "6673", v.Local.sSubject, "bpetersen@teamdls.com" , v.Local.sEmail, v.Local.sBody)
+			
+		f.Intrinsic.Control.Next(v.Local.iCounter)
+		
+		f.ODBC.Connection!Con.Close
+		
+		f.Intrinsic.Control.CallSub(Refresh)
+		
+	f.Intrinsic.Control.EndIf
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.ReleaseSelected.End
+
+'Get Child Data
+Program.Sub.GetChildData.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sSQL.Set("select RTRIM(ORDER_NO) SO_NO, RTRIM(H.CUSTOMER) CUSTOMER_CHILD, RTRIM(CM.NAME_CUSTOMER) NAME_CUSTOMER_CHILD, DATE_ORDER, DATE_DUE, RTRIM(CUSTOMER_PO) CUSTOMER_PO, case when SHP_HLD_FLAG = 4 then 'Y' else 'N' end as BLANKET from V_ORDER_HEADER H left join V_CUSTOMER_MASTER CM on RTRIM(H.CUSTOMER) = RTRIM(CM.CUSTOMER) where SHP_HLD_FLAG in (2,4)")
+	v.Local.sSQL.Set("select RTRIM(H.ORDER_NO) SO_NO, RTRIM(H.CUSTOMER) CUSTOMER_CHILD, RTRIM(CM.NAME_CUSTOMER) NAME_CUSTOMER_CHILD, H.DATE_ORDER, H.DATE_DUE, RTRIM(H.CUSTOMER_PO) CUSTOMER_PO, case when H.SHP_HLD_FLAG = 4 then 'Y' else 'N' end as BLANKET from V_ORDER_HEADER H left join V_CUSTOMER_MASTER CM on RTRIM(H.CUSTOMER) = RTRIM(CM.CUSTOMER) left join GCG_6673_SO_HOLD HOLD on RTRIM(HOLD.ORDER_NO) = RTRIM(H.ORDER_NO) where HOLD.SHP_HLD_FLAG in (2,4)  or H.SHP_HLD_FLAG = 4")
+	
+	'Jan 25, 2023
+	'treat blanket as regular orders
+	v.Local.sSQL.Set("select RTRIM(H.ORDER_NO) SO_NO, RTRIM(H.CUSTOMER) CUSTOMER_CHILD, RTRIM(CM.NAME_CUSTOMER) NAME_CUSTOMER_CHILD, H.DATE_ORDER, H.DATE_DUE, RTRIM(H.CUSTOMER_PO) CUSTOMER_PO, case when H.ORDER_TYPE = 'B' then 'Y' else 'N' end as BLANKET from V_ORDER_HEADER H left join V_CUSTOMER_MASTER CM on RTRIM(H.CUSTOMER) = RTRIM(CM.CUSTOMER) where RTRIM(H.ORDER_NO) in (select RTRIM(HOLD.ORDER_NO) from GCG_6673_SO_HOLD HOLD where HOLD.SHP_HLD_FLAG in (2,4))")
+	
+
+	f.ODBC.Connection!Con.OpenCompanyConnection(999)
+
+	f.Intrinsic.Control.If(v.DataTable."dtCustomer$dtSO".Exists)
+		f.Data.Datatable.Close("dtCustomer$dtSO")
+	f.Intrinsic.Control.EndIf
+	f.Data.Datatable.CreateFromSQL("dtCustomer$dtSO", "Con", v.Local.sSQL, True)
+
+	'add column select
+	f.Data.Datatable.AddColumn("dtCustomer$dtSO", "SELECT", "Boolean", False)
+	
+	'dictionary fill
+	'------------------------------------------------------------
+	v.Local.sSQL.Set("select RTRIM(ORDER_NO) SO, SUM(QTY_ORDERED*PRICE) TOTAL from V_ORDER_LINES group by ORDER_NO")
+	f.Data.Dictionary.CreateFromSQL("dictTotal", "Con", v.Local.sSQL)
+	f.Data.Dictionary.SetDefaultReturn("dictTotal", 0)
+	f.Data.Datatable.AddColumn("dtCustomer$dtSO", "TOTAL_AMOUNT", "Float", 0)
+	f.Data.Datatable.FillFromDictionary("dtCustomer$dtSO", "dictTotal", "SO_NO", "TOTAL_AMOUNT")
+	f.Data.Dictionary.Close("dictTotal")
+	'------------------------------------------------------------
+	
+	f.ODBC.Connection!Con.Close
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+'	f.Intrinsic.Control.CallSub(Unload)
+f.Intrinsic.Control.EndTry
+Program.Sub.GetChildData.End
+
+'Get Parent Data
+Program.Sub.GetParentData.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	'Credit code is in V.CUSTOMER_MASTER.CREDIT
+	'Credit Amount (limit) is in V_AR_CREDIT_LIMIT.CREDIT_AMOUNT
+	
+	v.Local.sSQL.Set("select RTRIM(H.CUSTOMER) CUSTOMER, RTRIM(CM.NAME_CUSTOMER) CUSTOMER_NAME, CL.CREDIT_AMOUNT CREDIT_AMOUNT from V_ORDER_HEADER H left join V_CUSTOMER_MASTER CM on RTRIM(H.CUSTOMER) = RTRIM(CM.CUSTOMER) left join V_AR_CREDIT_LIMIT CL on CM.CREDIT = CL.CREDIT_CODE where H.SHP_HLD_FLAG in (2,4) group by H.CUSTOMER, CUSTOMER_NAME, CREDIT_AMOUNT")
+	v.Local.sSQL.Set("select RTRIM(H.CUSTOMER) CUSTOMER, RTRIM(CM.NAME_CUSTOMER) CUSTOMER_NAME, CL.CREDIT_AMOUNT CREDIT_AMOUNT from V_ORDER_HEADER H left join V_CUSTOMER_MASTER CM on RTRIM(H.CUSTOMER) = RTRIM(CM.CUSTOMER) left join V_AR_CREDIT_LIMIT CL on CM.CREDIT = CL.CREDIT_CODE left join GCG_6673_SO_HOLD HOLD on RTRIM(H.ORDER_NO)=RTRIM(HOLD.ORDER_NO) where HOLD.SHP_HLD_FLAG in (2,4) group by H.CUSTOMER, CUSTOMER_NAME, CREDIT_AMOUNT")
+
+	f.ODBC.Connection!Con.OpenCompanyConnection(999)
+
+	f.Intrinsic.Control.If(v.DataTable.dtCustomer.Exists)
+		f.Data.Datatable.Close("dtCustomer")
+	f.Intrinsic.Control.EndIf
+	f.Data.Datatable.CreateFromSQL("dtCustomer", "Con", v.Local.sSQL, True)
+
+	'add column select
+'	f.Data.Datatable.AddColumn("dtCustomer", "SELECT", "Boolean", False)
+	
+'	'dictionary fill
+'	'------------------------------------------------------------
+	'Total Open AR
+	v.Local.sSQL.Set("select RTRIM(CUSTOMER) CUSTOMER, SUM(AMT_INVOICE) TOTAL_AR from AR_OPEN_ITEMS where CUSTOMER<> '' group by CUSTOMER  having TOTAL_AR <> 0")
+	f.Data.Dictionary.CreateFromSQL("dictOpenAR", "Con", v.Local.sSQL)
+	f.Data.Dictionary.SetDefaultReturn("dictOpenAR", 0)
+	f.Data.Datatable.AddColumn("dtCustomer", "OPEN_AR", "Float", 0)
+	f.Data.Datatable.FillFromDictionary("dtCustomer", "dictOpenAR", "CUSTOMER", "OPEN_AR")
+	f.Data.Dictionary.Close("dictOpenAR")
+	
+	'Total SO
+	v.Local.sSQL.Set("select RTRIM(CUSTOMER) CUSTOMER, SUM(QTY_ORDERED*PRICE) TOTAL_SO from V_ORDER_LINES where RTRIM(ORDER_NO) in (select RTRIM(REF.ORDER_NO) from V_ORDER_HEADER REF where ORDER_TYPE<>'B') group by CUSTOMER")
+	f.Data.Dictionary.CreateFromSQL("dictOpenSO", "Con", v.Local.sSQL)
+	f.Data.Dictionary.SetDefaultReturn("dictOpenSO", 0)
+	f.Data.Datatable.AddColumn("dtCustomer", "TOTAL_SO", "Float", 0)
+	f.Data.Datatable.FillFromDictionary("dtCustomer", "dictOpenSO", "CUSTOMER", "TOTAL_SO")
+	f.Data.Dictionary.Close("dictOpenSO")
+	
+	'Total Blanket
+	v.Local.sSQL.Set("select RTRIM(CUSTOMER) CUSTOMER, SUM(QTY_ORDERED*PRICE) TOTAL_SO from V_ORDER_LINES where RTRIM(ORDER_NO) in (select RTRIM(REF.ORDER_NO) from V_ORDER_HEADER REF where ORDER_TYPE='B') group by CUSTOMER")
+	f.Data.Dictionary.CreateFromSQL("dictOpenBlanket", "Con", v.Local.sSQL)
+	f.Data.Dictionary.SetDefaultReturn("dictOpenBlanket", 0)
+	f.Data.Datatable.AddColumn("dtCustomer", "OPEN_BLANKET", "Float", 0)
+	f.Data.Datatable.FillFromDictionary("dtCustomer", "dictOpenBlanket", "CUSTOMER", "OPEN_BLANKET")
+	f.Data.Dictionary.Close("dictOpenBlanket")
+	
+	'Available
+	f.Data.Datatable.AddExpressionColumn("dtCustomer", "AVAILABLE_BALANCE","Float", "CREDIT_AMOUNT-OPEN_AR-TOTAL_SO-OPEN_BLANKET")
+	
+	f.Data.Datatable.AddColumn("dtCustomer", "SELECT_DESELECT", "Boolean", False)
+'	'------------------------------------------------------------
+	f.ODBC.Connection!Con.Close
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+'	f.Intrinsic.Control.CallSub(Unload)
+f.Intrinsic.Control.EndTry
+Program.Sub.GetParentData.End
+
+'Add Data Relation
+Program.Sub.AddDataRelation.Start
+f.Intrinsic.Control.Try
+	f.Data.Datatable.AddRelation("dtCustomer", "CUSTOMER", "dtCustomer$dtSO", "CUSTOMER_CHILD", "ORDER ON HOLD")
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+'	f.Intrinsic.Control.CallSub(Unload)
+f.Intrinsic.Control.EndTry
+Program.Sub.AddDataRelation.End
+
+'Format Parent Table
+Program.Sub.FormatParentGrid.Start
+f.Intrinsic.Control.Try
+	gui.Form.GsgcSO.AddGridviewFromDatatable("gvParent", "dtCustomer")
+	gui.Form.GsgcSO.SetGridviewProperty("gvParent", v.Enum.GridViewPropertyNames!EnableAppearanceEvenRow, True)
+	gui.Form.GsgcSO.SetGridviewProperty("gvParent", v.Enum.GridViewPropertyNames!Editable, True)
+	gui.Form.GsgcSO.SetGridviewProperty("gvParent", v.Enum.GridViewPropertyNames!ReadOnly, False)
+	gui.Form.GsgcSO.SetGridviewProperty("gvParent", v.Enum.GridViewPropertyNames!ShowDetailTabs, True)
+	gui.Form.GsgcSO.SetGridviewProperty("gvParent", "OptionsViewShowAutoFilterRow", true)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER_NAME", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER NAME")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CREDIT_AMOUNT", v.Enum.ColumnPropertyNames!Caption, "CREDIT LIMIT")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_AR", v.Enum.ColumnPropertyNames!Caption, "TOTAL OPEN AR")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "TOTAL_SO", v.Enum.ColumnPropertyNames!Caption, "TOTAL OPEN ORDER")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_BLANKET", v.Enum.ColumnPropertyNames!Caption, "TOTAL BLANKETS")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "AVAILABLE_BALANCE", v.Enum.ColumnPropertyNames!Caption, "AVAILABLE BALANCE")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "SELECT_DESELECT", v.Enum.ColumnPropertyNames!Caption, "SELECT ALL")
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER_NAME", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CREDIT_AMOUNT", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_AR", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "TOTAL_SO", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_BLANKET", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "AVAILABLE_BALANCE", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "SELECT_DESELECT", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER_NAME", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CREDIT_AMOUNT", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_AR", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "TOTAL_SO", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_BLANKET", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "AVAILABLE_BALANCE", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "SELECT_DESELECT", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "SELECT_DESELECT", v.Enum.ColumnPropertyNames!VisibleIndex, 0)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CUSTOMER_NAME", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CREDIT_AMOUNT", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_AR", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "TOTAL_SO", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_BLANKET", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "AVAILABLE_BALANCE", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "SELECT_DESELECT", v.Enum.ColumnPropertyNames!AllowEdit, True)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "CREDIT_AMOUNT", v.Enum.ColumnPropertyNames!DisplayCustomNumeric, "$###,###.##")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_AR", v.Enum.ColumnPropertyNames!DisplayCustomNumeric, "$###,###.##")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "TOTAL_SO", v.Enum.ColumnPropertyNames!DisplayCustomNumeric, "$###,###.##")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "OPEN_BLANKET", v.Enum.ColumnPropertyNames!DisplayCustomNumeric, "$###,###.##")
+	gui.Form.GsgcSO.SetColumnProperty("gvParent", "AVAILABLE_BALANCE", v.Enum.ColumnPropertyNames!DisplayCustomNumeric, "$###,###.##")
+	
+	
+	gui.Form.GsgcSO.MainView("gvParent")
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+	f.Intrinsic.Control.CallSub(Unload)
+f.Intrinsic.Control.EndTry
+Program.Sub.FormatParentGrid.End
+
+'Format Child Table
+Program.Sub.FormatGrid.Start
+f.Intrinsic.Control.Try
+	gui.Form.GsgcSO.AddGridviewFromDatatable("gvSO", "dtCustomer$dtSO")
+	gui.Form.GsgcSO.SetGridviewProperty("gvSO", v.Enum.GridViewPropertyNames!EnableAppearanceEvenRow, True)
+	gui.Form.GsgcSO.SetGridviewProperty("gvSO", v.Enum.GridViewPropertyNames!Editable, True)
+	gui.Form.GsgcSO.SetGridviewProperty("gvSO", v.Enum.GridViewPropertyNames!ReadOnly, False)
+'	gui.Form.GsgcSO.SetGridviewProperty("gvSO", v.Enum.GridViewPropertyNames!ShowGroupPanel, True)
+	gui.Form.GsgcSO.SetGridviewProperty("gvSO", "OptionsViewShowAutoFilterRow", true)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SO_NO", v.Enum.ColumnPropertyNames!Caption, "ORDER")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "NAME_CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER NAME")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_ORDER", v.Enum.ColumnPropertyNames!Caption, "ORDER DATE")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_DUE", v.Enum.ColumnPropertyNames!Caption, "DUE DATE")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_PO", v.Enum.ColumnPropertyNames!Caption, "CUSTOMER PO")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "BLANKET", v.Enum.ColumnPropertyNames!Caption, "BLANKET?")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "TOTAL_AMOUNT", v.Enum.ColumnPropertyNames!Caption, "TOTAL_AMOUNT")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SELECT", v.Enum.ColumnPropertyNames!Caption, "SELECT")
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SO_NO", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "NAME_CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_ORDER", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_DUE", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_PO", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "BLANKET", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "TOTAL_AMOUNT", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SELECT", v.Enum.ColumnPropertyNames!HeaderFontBold, True)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SO_NO", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "NAME_CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_ORDER", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_DUE", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_PO", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "BLANKET", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "TOTAL_AMOUNT", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SELECT", v.Enum.ColumnPropertyNames!HeaderHAlignment, "Center")
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SO_NO", v.Enum.ColumnPropertyNames!MinWidth, 60)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!MinWidth, 60)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "NAME_CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!MinWidth, 160)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_ORDER", v.Enum.ColumnPropertyNames!MinWidth, 60)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_DUE", v.Enum.ColumnPropertyNames!MinWidth, 60)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_PO", v.Enum.ColumnPropertyNames!MinWidth, 120)	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "TOTAL_AMOUNT", v.Enum.ColumnPropertyNames!MinWidth, 80)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "BLANKET", v.Enum.ColumnPropertyNames!MinWidth, 40)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SELECT", v.Enum.ColumnPropertyNames!MinWidth, 40)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SO_NO", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "NAME_CUSTOMER_CHILD", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_ORDER", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_DUE", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "TOTAL_AMOUNT", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "BLANKET", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "CUSTOMER_PO", v.Enum.ColumnPropertyNames!AllowEdit, False)
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SELECT", v.Enum.ColumnPropertyNames!AllowEdit, True)
+	
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "TOTAL_AMOUNT", v.Enum.ColumnPropertyNames!DisplayCustomNumeric, "$###,###.##")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_ORDER", v.Enum.ColumnPropertyNames!DisplayCustomDateTime, "d")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "DATE_DUE", v.Enum.ColumnPropertyNames!DisplayCustomDateTime, "d")
+	gui.Form.GsgcSO.SetColumnProperty("gvSO", "SELECT", v.Enum.ColumnPropertyNames!VisibleIndex, 0)
+	
+'	gui.Form.GsgcSO.MainView("gvSO")
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+	f.Intrinsic.Control.CallSub(Unload)
+f.Intrinsic.Control.EndTry
+Program.Sub.FormatGrid.End
+
+'Unload
+Program.Sub.Unload.Start
+f.Intrinsic.Control.End
+Program.Sub.Unload.End
+
+'refresh form
+Program.Sub.Refresh.Start
+f.Intrinsic.Control.Try
+	gui.Form.GsgcSO.Visible(False)
+	
+	'Getdata
+	f.Intrinsic.Control.CallSub(GetParentData)
+	f.Intrinsic.Control.CallSub(GetChildData)
+	f.Intrinsic.Control.CallSub(AddDataRelation)
+	'Format Grid
+	f.Intrinsic.Control.CallSub(FormatParentGrid)
+	f.Intrinsic.Control.CallSub(FormatGrid)
+	
+	gui.Form.GsgcSO.Visible(True)
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+	f.Intrinsic.Control.CallSub(Unload)
+f.Intrinsic.Control.EndTry
+Program.Sub.Refresh.End
+
+'prevent user from select BLANKET
+' 3/20 not prevent from select BLANKET
+Program.Sub.GsgcSO_CellValueChanged.Start
+f.Intrinsic.Control.Try
+	v.Local.sBlanket.Declare(String)
+	v.Local.sCustomer.Declare(String)
+	v.Local.bSelect.Declare(Boolean)
+	v.Local.iCounter.Declare(Long)
+	v.Local.sIndex.Declare(String)
+	v.Local.sFilter.Declare(String)
+	v.Local.bSelectChild.Declare(Boolean)
+	
+	f.Intrinsic.Control.SelectCase(v.Args.Column)
+
+		
+		'Child Table Select
+		f.Intrinsic.Control.Case("SELECT")
+			v.Local.sBlanket.Set(v.DataTable.dtCustomer$dtSO(v.Args.RowIndex).BLANKET!FieldValTrim)
+			v.Local.bSelectChild.Set(v.DataTable.dtCustomer$dtSO(v.Args.RowIndex).SELECT!FieldVal)
+			
+'			f.Intrinsic.Control.If(v.Local.sBlanket,=,"Y")
+''				f.Data.Datatable.SetValue("dtCustomer$dtSO", v.Args.RowIndex, "SELECT", False)
+'			f.Intrinsic.Control.Else
+				f.Intrinsic.Control.If(v.Local.bSelectChild,=,True)
+					f.Data.Datatable.SetValue("dtCustomer$dtSO", v.Args.RowIndex, "SELECT", False)
+				f.Intrinsic.Control.Else
+					f.Data.Datatable.SetValue("dtCustomer$dtSO", v.Args.RowIndex, "SELECT", True)
+				f.Intrinsic.Control.EndIf
+'			f.Intrinsic.Control.EndIf
+			
+		'Select All / Deselect All
+		f.Intrinsic.Control.Case("SELECT_DESELECT")
+			'find values and indexes
+			v.Local.bSelect.Set(v.DataTable.dtCustomer(v.Args.RowIndex).SELECT_DESELECT!FieldVal)
+			v.Local.sCustomer.Set(v.DataTable.dtCustomer(v.Args.RowIndex).CUSTOMER!FieldValTrim)
+'			f.Intrinsic.String.Build("CUSTOMER_CHILD='{0}' and BLANKET='N'", v.Local.sCustomer, v.Local.sFilter)
+			f.Intrinsic.String.Build("CUSTOMER_CHILD='{0}'", v.Local.sCustomer, v.Local.sFilter)
+			v.Local.sIndex.Set("")
+			f.Data.Datatable.Select("dtCustomer$dtSO", v.Local.sFilter, v.Local.sIndex)
+
+			'if unchecked => check all
+			f.Intrinsic.Control.If(v.Local.bSelect,=,False)
+				f.Data.Datatable.SetValue("dtCustomer", v.Args.RowIndex, "SELECT_DESELECT", True)
+				f.Intrinsic.Control.If(v.Local.sIndex,!=,"***NORETURN***")
+					f.Intrinsic.String.Split(v.Local.sIndex, "*!*", v.Local.sIndex)
+					f.Intrinsic.Control.For(v.Local.iCounter, 0, v.Local.sIndex.UBound,1)
+						f.Data.Datatable.SetValue("dtCustomer$dtSO", v.Local.sIndex(v.Local.iCounter), "SELECT", True)
+					f.Intrinsic.Control.Next(v.Local.iCounter)
+				f.Intrinsic.Control.EndIf
+			'if checked => uncheck all
+			f.Intrinsic.Control.Else
+				f.Data.Datatable.SetValue("dtCustomer", v.Args.RowIndex, "SELECT_DESELECT", False)
+				f.Intrinsic.Control.If(v.Local.sIndex,!=,"***NORETURN***")
+					f.Intrinsic.String.Split(v.Local.sIndex, "*!*", v.Local.sIndex)
+					f.Intrinsic.Control.For(v.Local.iCounter, 0, v.Local.sIndex.UBound,1)
+						f.Data.Datatable.SetValue("dtCustomer$dtSO", v.Local.sIndex(v.Local.iCounter), "SELECT", False)
+					f.Intrinsic.Control.Next(v.Local.iCounter)
+				f.Intrinsic.Control.EndIf
+			f.Intrinsic.Control.EndIf
+			
+		f.Intrinsic.Control.EndSelect
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.GsgcSO_CellValueChanged.End
+
+Program.Sub.GsgcSO_RowCellClick.Start
+f.Intrinsic.Control.Try
+'	v.Local.sCustomer.Declare(String)
+'	v.Local.bSelect.Declare(Boolean)
+'	
+'	f.Intrinsic.Control.SelectCase(v.Args.Column)
+'		f.Intrinsic.Control.Case("SELECT_DESELECT")
+'			gui.Form.GsgcSO.GetCellValueByColumnName("gvParent", "CUSTOMER", v.Args.RowIndex, v.Local.sCustomer)
+'			gui.Form.GsgcSO.GetCellValueByColumnName("gvParent", "SELECT_DESELECT", v.Args.RowIndex, v.Local.bSelect)
+'			
+'	f.Intrinsic.Control.EndSelect
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.Control.CallSub(Catching)
+f.Intrinsic.Control.EndTry
+Program.Sub.GsgcSO_RowCellClick.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20230320132959680$}$kjzCRYkA6UEoRnCwndYnRamkp4HmPeXiFPiLQCONSyXGin218ji8w+yD7J3Nn1Ja
+Program.Sub.Comments.End
