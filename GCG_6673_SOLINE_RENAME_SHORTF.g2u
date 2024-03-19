@@ -1,0 +1,50 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'This program works with SO Line - Short Formm
+'hook#12440 - Populate SO Line
+'	rename script 1 button
+'	check for hold on this SO => enable/disable GEN WO BTN
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sSO.Declare(String)
+	v.Local.sRet.Declare(String)
+	
+	'rename btn
+	v.Passed.000162.Set("Check Balance")
+	v.Local.sSO.Set(v.Passed.000005)
+	f.Intrinsic.String.LPad(v.Local.sSO, "0", 7, v.Local.sSO)
+	'exit if no SO No
+	f.Intrinsic.Control.If(v.Local.sSO.Trim,=,"")
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+	
+	'check for hold status
+	'only unlock if hold flag is 1 or 3
+	'------------------------------------------------------------
+	f.Intrinsic.String.Build("select SHP_HLD_FLAG from GCG_6673_SO_HOLD where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		f.Intrinsic.Control.If(v.Local.sRet.Trim,=,"1", "OR", v.Local.sRet.Trim,=,"3")
+			f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000211, "LOCK", 0)
+		f.Intrinsic.Control.Else
+			f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000211, "LOCK", 1)
+		f.Intrinsic.Control.EndIf
+	f.ODBC.Connection!Con.Close
+	'------------------------------------------------------------
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
