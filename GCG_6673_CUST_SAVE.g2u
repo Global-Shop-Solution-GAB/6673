@@ -1,0 +1,42 @@
+Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+'CUS: Diversified Labeling Solutions 
+'ARC#6673
+' 	Mar 2022 Nam Le
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'This program checks if the customer is new and saves CustID to a custom table when user click on Save button
+'Accounts Receivable > File > Customers > New > Save
+'Accounts Receivable > File > Customers > Open > Save
+
+'hook#14384 => save CustID to GCG_6673_CUSTHOLD
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sCusID.Declare(String)
+	v.Local.sRet.Declare(String)
+	
+	v.Local.sCusID.Set(v.Passed.000002)
+	
+	f.Intrinsic.String.Build("select * from GCG_6673_CUSTHOLD where RTRIM(CUSTOMER)='{0}'", v.Local.sCusID.Trim, v.Local.sSQL)
+	
+	f.ODBC.Connection!Con.OpenCompanyConnection
+	
+	f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True)
+			f.Intrinsic.String.Build("insert into GCG_6673_CUSTHOLD (CUSTOMER, HOLD_TYPE) values ('{0}', 'Always Hold')", v.Local.sCusID, v.Local.sSQL)
+			f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		f.Intrinsic.Control.EndIf
+	f.ODBC.Connection!Con.Close
+	
+	f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
