@@ -1,0 +1,20 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+'GCG_6673 - rename script 3 btn
+' hook 14350
+
+
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Passed.000203.Set("Hold Type")
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription, "GCG 6673")
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20230213153330579$}$kjzCRYkA6UEoRnCwndYnRSjyVXnS1VGFQfh/2FFAZk0Tj9MVQEvGPzBRx9RYnm20
+Program.Sub.Comments.End
