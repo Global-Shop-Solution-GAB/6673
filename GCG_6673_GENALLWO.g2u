@@ -1,0 +1,148 @@
+﻿Program.Sub.Preflight.Start
+v.Global.sSO.Declare(String)
+Program.Sub.Preflight.End
+'Hook 11930 - OE Script 3
+
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'Generate WO for this SO
+'hook 11930
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	v.Local.sSQL.Declare(String)
+	v.Local.sCust.Declare(String)
+	v.Local.sSO.Declare(String)
+	v.Local.sRet.Declare(String)
+	v.Local.fCurrentTotal.Declare(Float)
+	v.Local.fOldTotal.Declare(Float)
+	
+	
+	v.Local.sSO.Set(v.Passed.000003)
+	f.Intrinsic.String.LPad(v.Local.sSO,"0",7,v.Local.sSO)
+	v.Global.sSO.Set(v.Local.sSO)
+	
+	'case when SO is not on hold
+	'when user clicks on Lines, data for current SO will be captured in a custom table GCG_6673_CRR_SO
+	'if not click on Lines => no change => end
+	
+	'get current SO's amount to compare with the captured SO before edit
+	'if different => hold
+	'------------------------------------------------------------
+	
+	'Oct 2022 - Only check Total Amount against Current Amount when the SO is on hold.
+	'	if it is released (from Dashboard), skip the check (SHP_HOLD_FLAG<>1)
+	'---------------
+	f.ODBC.Connection!Con.OpenCompanyConnection
+	f.Intrinsic.String.Build("select SHP_HLD_FLAG from GCG_6673_SO_HOLD where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.ODBC.Connection!Con.Close
+		
+	f.Intrinsic.Control.If(v.Local.sRet.Trim,=,"1", "OR", v.Local.sRet.Trim,=,"3")
+		f.Intrinsic.Control.CallSub(GenWO)
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+	'---------------
+	
+	
+	f.Intrinsic.String.Build("select TOTAL_AMT from GCG_6673_CRR_SO where RTRIM(ORDER_NO)='{0}' and RTRIM(GSSUSER)='{1}'", v.Local.sSO, v.Caller.User, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		v.Local.sRet.Set("")
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.ODBC.Connection!Con.Close
+	f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,True)
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.Else
+		v.Local.fOldTotal.Set(v.Local.sRet)
+	f.Intrinsic.Control.EndIf
+	
+	'Find current Total
+	f.Intrinsic.String.Build("select SUM(QTY_ORDERED*PRICE) from V_ORDER_LINES where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+	f.ODBC.Connection!Con.Close
+	
+	v.Local.fCurrentTotal.Set(v.Local.sRet)
+	
+	f.Intrinsic.Control.If(v.Local.fCurrentTotal,>,v.Local.fOldTotal)
+		'hold this SO
+		f.Intrinsic.UI.Msgbox("This Order Has Been Modified and Will Be Put Back on Hold.", "Cannot Generate WO")
+		f.Intrinsic.UI.ChangeCallerProperty(v.Passed.000203, "LOCK", 1)
+	f.Intrinsic.Control.Else
+		f.Intrinsic.Control.CallSub(GenWO)
+	f.Intrinsic.Control.EndIf
+	'------------------------------------------------------------
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+
+'THEY WANT
+'	open the WO Entry
+'	make edit
+'	SAVE => generate WO
+'	and PRINT
+'look for callwrapper => open the WO Entry screen + paste the data from SO Line (not generate WO yet!)
+
+
+'generate all lines in an SO
+'	PRINT ALL LINES
+' loop thru the WOs
+'	open one line a time
+
+'need turn off option that prints automatically
+'need a callwrapper to print the WO (after they save)
+
+Program.Sub.GenWO.Start
+f.Intrinsic.Control.Try
+	V.Local.sOrder.Declare(String)
+	v.Local.sParam.Declare(String)
+	v.Local.sSQL.Declare(String)
+	v.Local.iCount.Declare(Long)
+	
+	f.Intrinsic.UI.InvokeWaitDialog("Please wait...", "Generating WO for this Order")
+	
+	V.Local.sOrder.Set(V.Passed.000003)
+	f.Intrinsic.String.LPad(v.Local.sOrder,"0",7,v.Local.sOrder)
+	
+	'generate all lines from the SO
+	F.Intrinsic.String.Concat("O","!*!",V.Local.sOrder,V.Local.sParam)
+	F.Global.General.CallWrapperSync(200800,V.Local.sParam)
+	
+	'find the WO and open them
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		f.Intrinsic.String.Build("select RTRIM(JOB) JOB, RTRIM(SUFFIX) SUFFIX from V_JOB_HEADER where RTRIM(SALES_ORDER)='{0}' and DATE_CLOSED='1900-01-01'", v.Local.sOrder, v.Local.sSQL)
+		f.Data.DataTable.CreateFromSQL("dtWO", "Con", v.Local.sSQL, True)
+	f.ODBC.Connection!Con.Close
+	
+	f.Intrinsic.Control.If(v.DataTable.dtWO.RowCount,>,0)
+		f.Intrinsic.Control.For(v.Local.iCount, 0, v.DataTable.dtWO.RowCount--,1)
+			v.Local.sParam.Set("")
+			f.Intrinsic.String.ConcatCallWrapperArgs(v.DataTable.dtWO(v.Local.iCount).JOB!FieldValTrim,v.DataTable.dtWO(v.Local.iCount).SUFFIX!FieldValTrim,"O", v.Local.sParam)
+			f.Global.General.CallWrapperSync(2009, v.Local.sParam)
+		f.Intrinsic.Control.Next(v.Local.iCount)
+	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.UI.CloseWaitDialog
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.CloseWaitDialog
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.GenWO.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$nle$}$20230221092505560$}$kjzCRYkA6UEoRnCwndYnRSjyVXnS1VGFay3Ln27JKMHqdhCa1zKWyzfevjtqkgzP
+Program.Sub.Comments.End
