@@ -1,0 +1,76 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+'ARC#6673
+'Customer:DIVERSIFIED LABELING SOLUTIONS
+'	Mar 2022, Nam Le
+
+
+'The core system for customer ship hold effects all orders by customer which interferes with DLS
+'process of being able to create WOs and Ship orders in a more streamline fashion. DLS would like the
+'ship hold process to function at an order level and not at a customer level. Additionally, they have 3
+'types of customers: ones that would never get put on Ship Hold, ones that always get put on ship hold
+'regardless of the open balance, and ones that get put on ship hold only when they exceed their credit
+'limit.
+
+'hook#11810 - SO Header > Lines Button
+'this script captures the SO info before user edit
+'save to custom table GCG_6673_CRR_SO
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+	
+	v.Local.sSQL.Declare(String)
+	v.Local.sCust.Declare(String)
+	v.Local.sSO.Declare(String)
+	v.Local.sBlanket.Declare(String)
+	v.Local.sRet.Declare(String)
+	
+	v.Local.sSO.Set(v.Passed.000003)
+	v.Local.sCust.Set(v.Passed.000006)
+	v.Local.sBlanket.Set(v.Passed.000077)
+	
+	'exit if missing data
+	f.Intrinsic.Control.If(v.Local.sSO,=,"", "or", v.Local.sCust,=,"")
+		f.Intrinsic.Control.End
+	f.Intrinsic.Control.EndIf
+	
+	'skip if blanket
+'	f.Intrinsic.Control.If(v.Local.sBlanket.Trim,=,"Blanket")
+'		f.Intrinsic.Control.End
+'	f.Intrinsic.Control.EndIf
+	
+	f.Intrinsic.String.LPad(v.Local.sSO,"0",7,v.Local.sSO)
+	
+
+	'find current total amount of the SO
+	'delete old record
+	'insert the new record for current SO
+	'------------------------------------------------------------------------
+	f.ODBC.Connection!Con.OpenCompanyConnection
+		'find TOTAL_AMT
+		f.Intrinsic.String.Build("select SUM(QTY_ORDERED*PRICE) from V_ORDER_LINES where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+		v.Local.sRet.Set("")
+		f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		f.Intrinsic.Control.If(v.Local.sRet,=,"")
+			v.Local.sRet.Set(0)
+		f.Intrinsic.Control.EndIf
+		
+		'delete old record and insert new
+		f.Intrinsic.String.Build("delete from GCG_6673_CRR_SO where RTRIM(GSSUSER)='{0}'", v.Caller.User, v.Local.sSQL)
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+		f.Intrinsic.String.Build("insert into GCG_6673_CRR_SO (ORDER_NO, CUSTOMER, TOTAL_AMT, GSSUSER) values('{0}','{1}',{2},'{3}')", v.Local.sSO, v.Local.sCust, v.Local.sRet, v.Caller.User, v.Local.sSQL)
+		f.ODBC.Connection!Con.Execute(v.Local.sSQL)
+		
+	f.ODBC.Connection!Con.Close
+	'------------------------------------------------------------------------
+	
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription)
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$5$}$2.0.0.0$}$2
+${$6$}$nle$}$20230220132459005$}$kjzCRYkA6UEoRnCwndYnRSjyVXnS1VGFf7l9uM8Ronre1OD20ET631JpgDqyrUB1
+Program.Sub.Comments.End
