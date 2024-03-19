@@ -1,0 +1,44 @@
+﻿Program.Sub.Preflight.Start
+Program.Sub.Preflight.End
+
+'pre-save SO
+'check if Order is on hold, if so => flag hold
+
+Program.Sub.Main.Start
+f.Intrinsic.Control.Try
+
+	f.Intrinsic.Control.If(v.Caller.Hook,=,"11870")
+		v.Local.sSQL.Declare(String)
+		v.Local.sCust.Declare(String)
+		v.Local.sSO.Declare(String)
+		v.Local.sRet.Declare(String)
+		v.Local.fCurrentTotal.Declare(Float)
+		v.Local.fOldTotal.Declare(Float)
+		
+		'get SO and check if it is on hold
+		'if so, flag as hold
+		'------------------------------------------------------------
+		v.Local.sSO.Set(v.Passed.000003)
+		f.Intrinsic.String.LPad(v.Local.sSO,"0",7,v.Local.sSO)
+		f.Intrinsic.String.Build("select SHP_HLD_FLAG from GCG_6673_SO_HOLD where RTRIM(ORDER_NO)='{0}'", v.Local.sSO, v.Local.sSQL)
+		f.ODBC.Connection!Con.OpenCompanyConnection
+			f.ODBC.Connection!Con.ExecuteAndReturn(v.Local.sSQL, v.Local.sRet)
+		f.ODBC.Connection!Con.Close
+		
+		f.Intrinsic.Control.If(v.Ambient.ExecuteAndReturnEOF,=,False)
+			f.Intrinsic.Control.If(v.Local.sRet,=,"2", "or", v.Local.sRet,=,"4")
+				'flag
+				v.Passed.000096.Set("Y")
+				
+			f.Intrinsic.Control.EndIf
+		f.Intrinsic.Control.EndIf
+	f.Intrinsic.Control.EndIf
+f.Intrinsic.Control.Catch
+	f.Intrinsic.UI.Msgbox(v.Ambient.ErrorDescription, "GCG 6673")
+f.Intrinsic.Control.EndTry
+Program.Sub.Main.End
+
+Program.Sub.Comments.Start
+${$5$}$3.0.0.0$}$1
+${$6$}$nle$}$20230418131416364$}$kjzCRYkA6UEoRnCwndYnRXWLVBFthCf23Si+mmmjnUYD8LZsA/ifYZvjF+NeIDcO
+Program.Sub.Comments.End
